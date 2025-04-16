@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import Head from "next/head";
-
+import Papa from "papaparse";
 export default function HomePage() {
   const [file, setFile] = useState(null);
+  const [parsedCSVData, setParsedCSVData] = useState([]);
   const [prompt, setPrompt] = useState("");
   const [criteria, setCriteria] = useState([""]);
   const [selectedLLMs, setSelectedLLMs] = useState([]);
@@ -67,21 +68,41 @@ export default function HomePage() {
     },
   ]);
 
-  const handleFileUpload = (e) => {
-    const uploadedFile = e.target.files[0];
-    if (uploadedFile && uploadedFile.type === "text/csv") {
-      setFile(uploadedFile);
-    } else {
-      alert("Please upload a valid CSV file");
-    }
-  };
+  const handleFileSelect = (e) => {
+    const uploadedFile = e.target.files?.[0];
+    if (!uploadedFile) return;
 
-  const handleDrop = (e) => {
-    e.preventDefault();
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && droppedFile.type === "text/csv") {
-      setFile(droppedFile);
+    // 限制 4MB
+    if (uploadedFile.size > 4 * 1024 * 1024) {
+      alert("File too large. Please upload a file smaller than 4MB.");
+      return;
     }
+
+    Papa.parse(uploadedFile, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const rows = results.data.map((row, index) => ({
+          id: index + 1,
+          title: row.title || row.Title || "",
+          abstract: row.abstract || row.Abstract || "",
+          keywords: row.keywords || row.Keywords || "",
+        }));
+        // console.log("📦 Parsed CSV data:", rows);
+        setParsedCSVData(rows);
+        setFile({ name: uploadedFile.name });
+      },
+      error: (err) => {
+        console.error("CSV parsing error:", err);
+        alert("Failed to parse CSV file.");
+      },
+    });
+  };
+  const handleFileRemove = (e) => {
+    e.stopPropagation();
+    setFile(null);
+    setParsedCSVData([]);
+    document.getElementById("file-upload").value = ""; // reset the input
   };
 
   const handleCriteriaChange = (index, value) => {
@@ -180,17 +201,49 @@ export default function HomePage() {
     );
   };
 
-  const runTest = () => {
-    setIsTesting(true);
-    setHasResults(true);
+  const runTest = async () => {
+    if (!parsedCSVData || parsedCSVData.length < 1) return;
 
-    setTimeout(() => {
-      setIsTesting(false);
-    }, 1000);
+    const sample = [...parsedCSVData]
+      .sort(() => 0.5 - Math.random())
+      .slice(0, 3);
+
+    const response = await fetch("/api/analyze", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt,
+        criteria,
+        selectedLLMs,
+        papers: sample,
+      }),
+    });
+
+    const data = await response.json();
+    setResults(data.results);
+    setHasResults(true);
   };
 
-  const runAnalysis = () => {
-    setIsTesting(false);
+  const runAnalysis = async () => {
+    if (!parsedCSVData || parsedCSVData.length < 1) return;
+
+    const response = await fetch("/api/analyze", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt,
+        criteria,
+        selectedLLMs,
+        papers: parsedCSVData,
+      }),
+    });
+
+    const data = await response.json();
+    setResults(data.results);
     setHasResults(true);
   };
 
@@ -200,7 +253,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Head>
-        <title>LLM Analysis Dashboard</title>
+        <title>LLM Screener</title>
         <meta
           name="description"
           content="Analyze LLM performance with custom criteria"
@@ -209,7 +262,7 @@ export default function HomePage() {
 
       <main className="container mx-auto px-4 py-8 max-w-4xl">
         <h1 className="text-3xl font-bold text-center mb-8 text-gray-900">
-          LLM Analysis Dashboard
+          LLM Screener
         </h1>
 
         {/* Configuration Section */}
@@ -217,12 +270,10 @@ export default function HomePage() {
           {/* File Upload */}
           <div className="bg-white p-5 rounded-lg shadow">
             <h2 className="text-xl font-semibold mb-4 text-gray-900">
-              1. Upload CSV File
+              1. Parse CSV File
             </h2>
             <div
               className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-500 transition-colors"
-              onDrop={handleDrop}
-              onDragOver={(e) => e.preventDefault()}
               onClick={() => document.getElementById("file-upload").click()}
             >
               <input
@@ -230,73 +281,27 @@ export default function HomePage() {
                 type="file"
                 accept=".csv"
                 className="hidden"
-                onChange={handleFileUpload}
+                onChange={handleFileSelect}
               />
               {file ? (
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <svg
-                      className="w-5 h-5 text-green-600 mr-2"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    <span className="text-sm truncate max-w-xs text-gray-800">
-                      {file.name}
-                    </span>
-                  </div>
+                  <p className="text-sm text-gray-800">
+                    Selected file: {file.name}
+                  </p>
                   <button
-                    className="text-gray-600 hover:text-gray-900"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      document.getElementById("file-upload").value = "";
-                      setFile(null);
-                    }}
+                    onClick={(e) => handleFileRemove(e)}
+                    className="text-sm text-red-600 hover:text-red-800 ml-4"
                   >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
+                    Remove
                   </button>
                 </div>
               ) : (
-                <div className="flex flex-col items-center">
-                  <svg
-                    className="w-8 h-8 text-gray-500 mb-2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                    />
-                  </svg>
-                  <p className="text-sm text-gray-700">
-                    Drag & drop your CSV file here or click to browse
+                <>
+                  <p className="text-gray-700">Click to select your CSV file</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Max file size: 4MB
                   </p>
-                  <p className="text-xs text-gray-600 mt-1">
-                    Supports .csv files only
-                  </p>
-                </div>
+                </>
               )}
             </div>
           </div>
