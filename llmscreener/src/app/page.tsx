@@ -10,6 +10,7 @@ export default function HomePage() {
   const [criteria, setCriteria] = useState([""]);
   const [selectedLLMs, setSelectedLLMs] = useState([]);
   const [isTesting, setIsTesting] = useState(false);
+  const [results, setResults] = useState([]);
   const [hasResults, setHasResults] = useState(false);
 
   const llmOptions = [
@@ -19,54 +20,6 @@ export default function HomePage() {
     { id: "gemini-pro", name: "Gemini Pro" },
     { id: "mistral", name: "Mistral" },
   ];
-
-  // 模拟结果数据
-  const [results, setResults] = useState([
-    {
-      id: 1,
-      title: "Deep Learning in Biology",
-      abstract:
-        "Study of AI in healthcare applications, focusing on diagnostic tools and treatment optimization...",
-      keywords: "AI, Health",
-      evaluations: {
-        "GPT-4": {
-          result: "yes",
-          reason: "Matches AI in health criteria perfectly",
-        },
-        Claude: {
-          result: "no",
-          reason: "Not enough context about specific medical applications",
-        },
-        Gemini: {
-          result: "unknown",
-          reason: "Uncertain due to lack of technical details in abstract",
-        },
-      },
-      expanded: false,
-    },
-    {
-      id: 2,
-      title: "AI in Medicine",
-      abstract:
-        "The rise of AI in medical field diagnostics, with case studies from radiology and pathology...",
-      keywords: "AI, Medicine",
-      evaluations: {
-        "GPT-4": {
-          result: "yes",
-          reason: "Clear medical application with good technical depth",
-        },
-        Claude: {
-          result: "yes",
-          reason: "Well-structured case studies fit Claude's strengths",
-        },
-        Gemini: {
-          result: "yes",
-          reason: "Excellent fit for medical diagnostics",
-        },
-      },
-      expanded: false,
-    },
-  ]);
 
   const handleFileSelect = (e) => {
     const uploadedFile = e.target.files?.[0];
@@ -130,22 +83,22 @@ export default function HomePage() {
   };
 
   // 切换评估结果
-  const toggleEvaluation = (resultId, llmName) => {
+  const toggleEvaluation = (resultId, llmId) => {
     setResults(
       results.map((item) => {
         if (item.id === resultId) {
-          const current = item.evaluations[llmName]?.result || "unknown";
+          const current = item.evaluations[llmId]?.result || "unknown";
           let next;
-          if (current === "yes") next = "no";
-          else if (current === "no") next = "unknown";
-          else next = "yes";
+          if (current === "include") next = "exclude";
+          else if (current === "exclude") next = "unknown";
+          else next = "include";
 
           return {
             ...item,
             evaluations: {
               ...item.evaluations,
-              [llmName]: {
-                ...item.evaluations[llmName],
+              [llmId]: {
+                ...item.evaluations[llmId],
                 result: next,
               },
             },
@@ -158,32 +111,30 @@ export default function HomePage() {
 
   // 计算最终结果
   const calculateFinalResult = (evaluations, selectedLLMs) => {
-    const llmNames = selectedLLMs.map(
-      (id) => llmOptions.find((llm) => llm.id === id).name
-    );
-    const results = llmNames.map((name) => evaluations[name]?.result);
+    const results = selectedLLMs.map((id) => evaluations[id]?.result);
 
     if (results.length === 0) return "unknown";
-    if (results.every((r) => r === "yes")) return "yes";
-    if (results.every((r) => r === "no")) return "no";
+    if (results.every((r) => r === "include")) return "include";
+    if (results.every((r) => r === "exclude")) return "exclude";
     return "unknown";
   };
 
   // 渲染评估结果图标
   const renderEvaluationIcon = (result) => {
     switch (result) {
-      case "yes":
+      case "include":
         return (
           <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-green-100 text-green-800">
             ✅
           </span>
         );
-      case "no":
+      case "exclude":
         return (
           <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-red-100 text-red-800">
             ✕
           </span>
         );
+      case "unknown":
       default:
         return (
           <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-yellow-100 text-yellow-800">
@@ -465,22 +416,25 @@ export default function HomePage() {
                         return (
                           <>
                             <tr key={item.id} className="hover:bg-gray-50">
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              <td
+                                className="px-6 py-4 max-w-xs truncate whitespace-nowrap overflow-hidden text-sm text-gray-900"
+                                title={item.title}
+                              >
                                 {item.title}
                               </td>
+
                               {selectedLLMs.map((llmId) => {
                                 const llmName = llmOptions.find(
                                   (llm) => llm.id === llmId
                                 ).name;
                                 const evalResult =
-                                  item.evaluations[llmName]?.result ||
-                                  "unknown";
+                                  item.evaluations[llmId]?.result || "unknown";
                                 return (
                                   <td
                                     key={`${item.id}-${llmId}`}
                                     className="px-6 py-4 whitespace-nowrap text-center text-sm cursor-pointer hover:bg-gray-100"
                                     onClick={() =>
-                                      toggleEvaluation(item.id, llmName)
+                                      toggleEvaluation(item.id, llmId)
                                     }
                                   >
                                     {renderEvaluationIcon(evalResult)}
@@ -530,7 +484,7 @@ export default function HomePage() {
                                           (llm) => llm.id === llmId
                                         ).name;
                                         const evalData =
-                                          item.evaluations[llmName] || {};
+                                          item.evaluations[llmId] || {};
                                         return (
                                           <div
                                             key={`${item.id}-${llmId}-detail`}
@@ -538,25 +492,17 @@ export default function HomePage() {
                                           >
                                             <div className="flex items-center mb-2">
                                               <span
-                                                className={`inline-flex items-center justify-center h-6 w-6 rounded-full mr-2 cursor-pointer hover:opacity-80 ${
-                                                  evalData.result === "yes"
-                                                    ? "bg-green-100 text-green-800"
-                                                    : evalData.result === "no"
-                                                    ? "bg-red-100 text-red-800"
-                                                    : "bg-yellow-100 text-yellow-800"
-                                                }`}
+                                                className="cursor-pointer"
                                                 onClick={() =>
                                                   toggleEvaluation(
                                                     item.id,
-                                                    llmName
+                                                    llmId
                                                   )
                                                 }
                                               >
-                                                {evalData.result === "yes"
-                                                  ? "✅"
-                                                  : evalData.result === "no"
-                                                  ? "✕"
-                                                  : "?"}
+                                                {renderEvaluationIcon(
+                                                  evalData.result
+                                                )}
                                               </span>
                                               <p className="font-medium text-gray-900">
                                                 {llmName}
@@ -586,13 +532,13 @@ export default function HomePage() {
                       <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-green-100 text-green-800 mr-1">
                         ✅
                       </span>
-                      <span>Yes</span>
+                      <span>Include</span>
                     </div>
                     <div className="flex items-center">
                       <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-red-100 text-red-800 mr-1">
                         ✕
                       </span>
-                      <span>No</span>
+                      <span>Exclude</span>
                     </div>
                     <div className="flex items-center">
                       <span className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-yellow-100 text-yellow-800 mr-1">

@@ -8,21 +8,40 @@ export async function POST(req) {
     return Response.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  // ⬇️ Instantiate OpenAI inside the handler
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
   });
 
   async function callLLM({ llmName, prompt }) {
+    console.log(`🧠 Prompt sent to ${llmName}:\n${prompt}`);
+
     if (llmName === "gpt-4") {
-      const res = await openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0,
-      });
-      return res.choices[0].message.content;
+      try {
+        const res = await openai.chat.completions.create({
+          model: "gpt-4",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0,
+        });
+
+        const content = res.choices[0].message.content.trim();
+
+        // 尝试只提取 JSON 部分
+        const match = content.match(/{[\s\S]+}/);
+        if (!match) throw new Error("LLM response is not valid JSON");
+
+        const jsonStr = match[0];
+        console.log("📩 GPT-4 response:", jsonStr);
+        return jsonStr;
+      } catch (error) {
+        console.error("💥 GPT-4 error:", error);
+        return JSON.stringify({
+          pass: "unknown",
+          reason: `Failed to parse GPT-4 response: ${error.message}`,
+        });
+      }
     }
 
+    // Mock for Mistral or other models
     if (llmName === "mistral") {
       return JSON.stringify({
         pass: true,
@@ -32,14 +51,15 @@ export async function POST(req) {
 
     return JSON.stringify({
       pass: "unknown",
-      reason: `Mocked unknown response for ${llmName}`,
+      reason: `LLM "${llmName}" not implemented`,
     });
   }
 
   async function runMultiToolAgent({ llmName, fullText, criteria }) {
     for (let i = 0; i < criteria.length; i++) {
       const tool = criteria[i];
-      const prompt = `
+
+      const toolPrompt = `
 Tool ${i + 1}: ${tool}
 
 Paper:
@@ -59,7 +79,7 @@ Reply ONLY with valid JSON:
 `.trim();
 
       try {
-        const response = await callLLM({ llmName, prompt });
+        const response = await callLLM({ llmName, prompt: toolPrompt });
         const parsed = JSON.parse(response);
 
         if (parsed.pass === false) {
@@ -75,10 +95,13 @@ Reply ONLY with valid JSON:
             reason: `🤷 Tool ${i + 1} was inconclusive: ${parsed.reason}`,
           };
         }
+
+        // Continue to next tool if passed
       } catch (err) {
+        console.error(`❌ Error parsing tool ${i + 1} result:`, err);
         return {
           result: "unknown",
-          reason: `⚠️ Error evaluating Tool ${i + 1}`,
+          reason: `⚠️ Tool ${i + 1} parse error: ${err.message}`,
         };
       }
     }
@@ -89,7 +112,6 @@ Reply ONLY with valid JSON:
     };
   }
 
-  // Process all papers and LLMs
   const results = [];
 
   for (const paper of papers) {
