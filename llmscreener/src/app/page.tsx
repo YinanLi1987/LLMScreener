@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Head from "next/head";
 import Papa from "papaparse";
 export default function HomePage() {
@@ -13,6 +13,7 @@ export default function HomePage() {
   const [results, setResults] = useState([]);
   const [hasResults, setHasResults] = useState(false);
   const [activeLLM, setActiveLLM] = useState(selectedLLMs[0] || null);
+  const [confirmedEntities, setConfirmedEntities] = useState({});
 
   const llmOptions = [
     { id: "gpt-4", name: "GPT-4" },
@@ -21,6 +22,28 @@ export default function HomePage() {
     { id: "gemini-pro", name: "Gemini Pro" },
     { id: "mistral", name: "Mistral" },
   ];
+  useEffect(() => {
+    const merged = {};
+    results.forEach((item) => {
+      const mergedFields = {};
+      selectedLLMs.forEach((llmId) => {
+        const extracted = item.evaluations[llmId]?.extracted || {};
+        Object.entries(extracted).forEach(([key, values]) => {
+          if (!mergedFields[key]) mergedFields[key] = new Set();
+          values.forEach((val) => mergedFields[key].add(val));
+        });
+      });
+
+      const mergedFinal = {};
+      Object.entries(mergedFields).forEach(([key, valSet]) => {
+        mergedFinal[key] = Array.from(valSet);
+      });
+
+      merged[item.id] = mergedFinal;
+    });
+
+    setConfirmedEntities(merged);
+  }, [results]);
 
   const handleFileSelect = (e) => {
     const uploadedFile = e.target.files?.[0];
@@ -597,6 +620,80 @@ export default function HomePage() {
                                           </div>
                                         );
                                       })}
+                                    </div>
+                                    <div className="mt-4">
+                                      <h3 className="font-semibold text-gray-900 mb-2">
+                                        Final Entities
+                                      </h3>
+                                      {Object.entries(
+                                        confirmedEntities[item.id] || {}
+                                      ).map(([field, values]) => (
+                                        <div key={field} className="mb-2">
+                                          <p className="text-sm font-medium mb-1">
+                                            {field}:
+                                          </p>
+                                          <div className="flex flex-wrap gap-2">
+                                            {values.map((val, idx) => (
+                                              <span
+                                                key={`${field}-${val}-${idx}`}
+                                                className="inline-flex items-center bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full"
+                                              >
+                                                {val}
+                                                <button
+                                                  className="ml-1 text-blue-600 hover:text-blue-900"
+                                                  onClick={() => {
+                                                    const updated = {
+                                                      ...confirmedEntities,
+                                                    };
+                                                    updated[item.id][field] =
+                                                      updated[item.id][
+                                                        field
+                                                      ].filter(
+                                                        (v) => v !== val
+                                                      );
+                                                    setConfirmedEntities(
+                                                      updated
+                                                    );
+                                                  }}
+                                                >
+                                                  ×
+                                                </button>
+                                              </span>
+                                            ))}
+                                            <input
+                                              type="text"
+                                              placeholder="+ Add"
+                                              className="border rounded px-2 py-1 text-sm"
+                                              onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                  const val =
+                                                    e.target.value.trim();
+                                                  if (!val) return;
+                                                  const updated = {
+                                                    ...confirmedEntities,
+                                                  };
+                                                  if (!updated[item.id])
+                                                    updated[item.id] = {};
+                                                  if (!updated[item.id][field])
+                                                    updated[item.id][field] =
+                                                      [];
+                                                  if (
+                                                    !updated[item.id][
+                                                      field
+                                                    ].includes(val)
+                                                  ) {
+                                                    updated[item.id][
+                                                      field
+                                                    ].push(val);
+                                                  }
+                                                  setConfirmedEntities(updated);
+                                                  e.target.value = "";
+                                                }
+                                              }}
+                                            />
+                                          </div>
+                                        </div>
+                                      ))}
                                     </div>
                                   </div>
                                 </td>

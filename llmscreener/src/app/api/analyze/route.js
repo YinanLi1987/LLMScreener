@@ -99,10 +99,22 @@ Reply ONLY with valid JSON:
   "reason": "...",
   "extracted": {
     "Population": ["manure-borne microorganisms", "indigenous soil microorganisms"]
+    "Intervention": ["treated fields"],
+    "Comparator": ["untreated fields"],
+    "Outcome": ["antibiotic resistance genes", "antibiotic resistant bacteria"]
   },
   "evidence": {
     "Population": [
       "This study examined manure-borne microorganisms and indigenous soil microorganisms in treated fields."
+    ],
+    "Intervention": [
+      "The treated fields were compared to untreated fields."
+    ],
+    "Comparator": [
+      "The untreated fields served as a control."
+    ],
+    "Outcome": [
+      "The study focused on antibiotic resistance genes and antibiotic resistant bacteria."
     ]
   }
 }
