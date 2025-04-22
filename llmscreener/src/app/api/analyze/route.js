@@ -91,13 +91,20 @@ Paper:
 ${fullText}
 
 Evaluate the paper strictly against this tool.
+For each extracted element, also return the sentence(s) it was found in under a field called 'evidence'
 
 Reply ONLY with valid JSON:
 {
   "pass": true | false | "unknown",
   "reason": "...",
-  "Population": ["..."],
-  "Intervention": ["..."]
+  "extracted": {
+    "Population": ["manure-borne microorganisms", "indigenous soil microorganisms"]
+  },
+  "evidence": {
+    "Population": [
+      "This study examined manure-borne microorganisms and indigenous soil microorganisms in treated fields."
+    ]
+  }
 }
 
 - Use true if clearly satisfied
@@ -108,18 +115,15 @@ Reply ONLY with valid JSON:
       try {
         const response = await callLLM({ llmName, prompt: toolPrompt });
         const parsed = JSON.parse(response);
-        const extracted = {};
-        for (const [key, value] of Object.entries(parsed)) {
-          if (!["pass", "reason"].includes(key)) {
-            extracted[key] = value;
-          }
-        }
+        const extracted = parsed.extracted || {};
+        const evidence = parsed.evidence || {};
 
         if (parsed.pass === false) {
           return {
             result: "exclude",
             reason: `❌ Tool ${i + 1} failed: ${parsed.reason}`,
             extracted,
+            evidence,
           };
         }
 
@@ -128,9 +132,10 @@ Reply ONLY with valid JSON:
             result: "unknown",
             reason: `🤷 Tool ${i + 1} was inconclusive: ${parsed.reason}`,
             extracted,
+            evidence,
           };
         }
-        lastExtracted = extracted;
+        lastExtracted = lastExtracted = { extracted, evidence };
         // Continue to next tool if passed
       } catch (err) {
         console.error(`❌ Error parsing tool ${i + 1} result:`, err);
@@ -138,6 +143,7 @@ Reply ONLY with valid JSON:
           result: "unknown",
           reason: `⚠️ Tool ${i + 1} parse error: ${err.message}`,
           extracted: {},
+          evidence: {},
         };
       }
     }
@@ -145,7 +151,8 @@ Reply ONLY with valid JSON:
     return {
       result: "include",
       reason: "✅ All tools passed",
-      extracted: lastExtracted,
+      extracted: lastExtracted.extracted || {},
+      evidence: lastExtracted.evidence || {},
     };
   }
 

@@ -12,6 +12,7 @@ export default function HomePage() {
   const [isTesting, setIsTesting] = useState(false);
   const [results, setResults] = useState([]);
   const [hasResults, setHasResults] = useState(false);
+  const [activeLLM, setActiveLLM] = useState(selectedLLMs[0] || null);
 
   const llmOptions = [
     { id: "gpt-4", name: "GPT-4" },
@@ -196,6 +197,31 @@ export default function HomePage() {
     const data = await response.json();
     setResults(data.results);
     setHasResults(true);
+  };
+  const highlightSentences = (text, evidence) => {
+    if (!evidence) return text;
+
+    const fieldColors = {
+      Population: "bg-blue-100 text-blue-800",
+      Intervention: "bg-green-100 text-green-800",
+      Outcome: "bg-purple-100 text-purple-800",
+    };
+
+    let result = text;
+
+    Object.entries(evidence).forEach(([field, sentences]) => {
+      const colorClass = fieldColors[field] || "bg-yellow-100 text-yellow-800";
+      sentences.forEach((sentence) => {
+        const safeSentence = sentence.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+        const regex = new RegExp(`(${safeSentence})`, "g");
+        result = result.replace(
+          regex,
+          `<span class="px-1 rounded ${colorClass} font-medium">$1</span>`
+        );
+      });
+    });
+
+    return result;
   };
 
   const isReady =
@@ -470,7 +496,47 @@ export default function HomePage() {
                                       <p className="font-medium text-gray-900">
                                         Abstract:
                                       </p>
-                                      <p>{item.abstract}</p>
+
+                                      {/* LLM 切换按钮组 */}
+                                      <div className="flex flex-wrap gap-2 mb-2 mt-1">
+                                        {selectedLLMs.map((llmId) => {
+                                          const llmName =
+                                            llmOptions.find(
+                                              (llm) => llm.id === llmId
+                                            )?.name || llmId;
+                                          const isActive = llmId === activeLLM;
+
+                                          return (
+                                            <button
+                                              key={llmId}
+                                              onClick={() =>
+                                                setActiveLLM(llmId)
+                                              }
+                                              className={`px-3 py-1 rounded-md text-sm font-medium border ${
+                                                isActive
+                                                  ? "bg-blue-600 text-white border-blue-700"
+                                                  : "bg-white text-gray-800 border-gray-300 hover:bg-gray-100"
+                                              }`}
+                                            >
+                                              {llmName}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+
+                                      {/* 高亮展示 abstract */}
+                                      {activeLLM && (
+                                        <div
+                                          className="text-gray-800"
+                                          dangerouslySetInnerHTML={{
+                                            __html: highlightSentences(
+                                              item.abstract,
+                                              item.evaluations[activeLLM]
+                                                ?.evidence
+                                            ),
+                                          }}
+                                        />
+                                      )}
                                     </div>
                                     <div>
                                       <p className="font-medium text-gray-900">
