@@ -56,6 +56,8 @@ export async function POST(req) {
   }
 
   async function runMultiToolAgent({ llmName, fullText, criteria }) {
+    let lastExtracted = {};
+
     for (let i = 0; i < criteria.length; i++) {
       const tool = criteria[i];
 
@@ -70,7 +72,9 @@ Evaluate the paper strictly against this tool.
 Reply ONLY with valid JSON:
 {
   "pass": true | false | "unknown",
-  "reason": "..."
+  "reason": "...",
+  "Population": ["..."],
+  "Intervention": ["..."]
 }
 
 - Use true if clearly satisfied
@@ -81,11 +85,18 @@ Reply ONLY with valid JSON:
       try {
         const response = await callLLM({ llmName, prompt: toolPrompt });
         const parsed = JSON.parse(response);
+        const extracted = {};
+        for (const [key, value] of Object.entries(parsed)) {
+          if (!["pass", "reason"].includes(key)) {
+            extracted[key] = value;
+          }
+        }
 
         if (parsed.pass === false) {
           return {
             result: "exclude",
             reason: `❌ Tool ${i + 1} failed: ${parsed.reason}`,
+            extracted,
           };
         }
 
@@ -93,15 +104,17 @@ Reply ONLY with valid JSON:
           return {
             result: "unknown",
             reason: `🤷 Tool ${i + 1} was inconclusive: ${parsed.reason}`,
+            extracted,
           };
         }
-
+        lastExtracted = extracted;
         // Continue to next tool if passed
       } catch (err) {
         console.error(`❌ Error parsing tool ${i + 1} result:`, err);
         return {
           result: "unknown",
           reason: `⚠️ Tool ${i + 1} parse error: ${err.message}`,
+          extracted: {},
         };
       }
     }
@@ -109,6 +122,7 @@ Reply ONLY with valid JSON:
     return {
       result: "include",
       reason: "✅ All tools passed",
+      extracted: lastExtracted,
     };
   }
 

@@ -512,6 +512,22 @@ export default function HomePage() {
                                               {evalData.reason ||
                                                 "No evaluation available"}
                                             </p>
+                                            {evalData.extracted && (
+                                              <div className="mt-2 text-sm text-gray-700 space-y-1">
+                                                {Object.entries(
+                                                  evalData.extracted
+                                                ).map(([key, values]) => (
+                                                  <div key={key}>
+                                                    <span className="font-medium">
+                                                      {key}:
+                                                    </span>{" "}
+                                                    {Array.isArray(values)
+                                                      ? values.join(", ")
+                                                      : values}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
                                           </div>
                                         );
                                       })}
