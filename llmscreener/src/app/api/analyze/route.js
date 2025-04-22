@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 
 export async function POST(req) {
   const body = await req.json();
@@ -10,6 +11,9 @@ export async function POST(req) {
 
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
+  });
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
   });
 
   async function callLLM({ llmName, prompt }) {
@@ -40,7 +44,26 @@ export async function POST(req) {
         });
       }
     }
+    if (llmName === "claude-3") {
+      try {
+        const res = await anthropic.messages.create({
+          model: "claude-3-opus-20240229", // Claude 3 Opus
+          max_tokens: 1024,
+          messages: [{ role: "user", content: prompt }],
+        });
 
+        const content = res.content[0]?.text?.trim();
+        const match = content.match(/{[\s\S]+}/);
+        if (!match) throw new Error("Claude response is not valid JSON");
+        return match[0];
+      } catch (error) {
+        console.error("💥 Claude error:", error);
+        return JSON.stringify({
+          pass: "unknown",
+          reason: `Failed to parse Claude response: ${error.message}`,
+        });
+      }
+    }
     // Mock for Mistral or other models
     if (llmName === "mistral") {
       return JSON.stringify({

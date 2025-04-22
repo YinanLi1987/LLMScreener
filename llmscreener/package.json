@@ -9,6 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "anthropic": "^0.0.0",
     "next": "15.3.0",
     "openai": "^4.94.0",
     "papaparse": "^5.5.2",
