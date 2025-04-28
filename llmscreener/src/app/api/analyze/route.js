@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 
 export async function POST(req) {
   const body = await req.json();
@@ -10,6 +11,9 @@ export async function POST(req) {
 
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
+  });
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
   });
 
   async function callLLM({ llmName, prompt }) {
@@ -40,7 +44,26 @@ export async function POST(req) {
         });
       }
     }
+    if (llmName === "claude-3") {
+      try {
+        const res = await anthropic.messages.create({
+          model: "claude-3-opus-20240229", // Claude 3 Opus
+          max_tokens: 1024,
+          messages: [{ role: "user", content: prompt }],
+        });
 
+        const content = res.content[0]?.text?.trim();
+        const match = content.match(/{[\s\S]+}/);
+        if (!match) throw new Error("Claude response is not valid JSON");
+        return match[0];
+      } catch (error) {
+        console.error("💥 Claude error:", error);
+        return JSON.stringify({
+          pass: "unknown",
+          reason: `Failed to parse Claude response: ${error.message}`,
+        });
+      }
+    }
     // Mock for Mistral or other models
     if (llmName === "mistral") {
       return JSON.stringify({
@@ -56,6 +79,8 @@ export async function POST(req) {
   }
 
   async function runMultiToolAgent({ llmName, fullText, criteria }) {
+    let lastExtracted = {};
+
     for (let i = 0; i < criteria.length; i++) {
       const tool = criteria[i];
 
@@ -66,11 +91,32 @@ Paper:
 ${fullText}
 
 Evaluate the paper strictly against this tool.
+For each extracted element, also return the sentence(s) it was found in under a field called 'evidence'
 
 Reply ONLY with valid JSON:
 {
   "pass": true | false | "unknown",
-  "reason": "..."
+  "reason": "...",
+  "extracted": {
+    "Population": ["manure-borne microorganisms", "indigenous soil microorganisms"]
+    "Intervention": ["treated fields"],
+    "Comparator": ["untreated fields"],
+    "Outcome": ["antibiotic resistance genes", "antibiotic resistant bacteria"]
+  },
+  "evidence": {
+    "Population": [
+      "This study examined manure-borne microorganisms and indigenous soil microorganisms in treated fields."
+    ],
+    "Intervention": [
+      "The treated fields were compared to untreated fields."
+    ],
+    "Comparator": [
+      "The untreated fields served as a control."
+    ],
+    "Outcome": [
+      "The study focused on antibiotic resistance genes and antibiotic resistant bacteria."
+    ]
+  }
 }
 
 - Use true if clearly satisfied
@@ -81,11 +127,15 @@ Reply ONLY with valid JSON:
       try {
         const response = await callLLM({ llmName, prompt: toolPrompt });
         const parsed = JSON.parse(response);
+        const extracted = parsed.extracted || {};
+        const evidence = parsed.evidence || {};
 
         if (parsed.pass === false) {
           return {
             result: "exclude",
             reason: `❌ Tool ${i + 1} failed: ${parsed.reason}`,
+            extracted,
+            evidence,
           };
         }
 
@@ -93,15 +143,19 @@ Reply ONLY with valid JSON:
           return {
             result: "unknown",
             reason: `🤷 Tool ${i + 1} was inconclusive: ${parsed.reason}`,
+            extracted,
+            evidence,
           };
         }
-
+        lastExtracted = lastExtracted = { extracted, evidence };
         // Continue to next tool if passed
       } catch (err) {
         console.error(`❌ Error parsing tool ${i + 1} result:`, err);
         return {
           result: "unknown",
           reason: `⚠️ Tool ${i + 1} parse error: ${err.message}`,
+          extracted: {},
+          evidence: {},
         };
       }
     }
@@ -109,6 +163,8 @@ Reply ONLY with valid JSON:
     return {
       result: "include",
       reason: "✅ All tools passed",
+      extracted: lastExtracted.extracted || {},
+      evidence: lastExtracted.evidence || {},
     };
   }
 

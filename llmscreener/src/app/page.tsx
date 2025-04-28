@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Head from "next/head";
 import Papa from "papaparse";
 export default function HomePage() {
@@ -12,6 +12,8 @@ export default function HomePage() {
   const [isTesting, setIsTesting] = useState(false);
   const [results, setResults] = useState([]);
   const [hasResults, setHasResults] = useState(false);
+  const [activeLLM, setActiveLLM] = useState(selectedLLMs[0] || null);
+  const [confirmedEntities, setConfirmedEntities] = useState({});
 
   const llmOptions = [
     { id: "gpt-4", name: "GPT-4" },
@@ -20,6 +22,28 @@ export default function HomePage() {
     { id: "gemini-pro", name: "Gemini Pro" },
     { id: "mistral", name: "Mistral" },
   ];
+  useEffect(() => {
+    const merged = {};
+    results.forEach((item) => {
+      const mergedFields = {};
+      selectedLLMs.forEach((llmId) => {
+        const extracted = item.evaluations[llmId]?.extracted || {};
+        Object.entries(extracted).forEach(([key, values]) => {
+          if (!mergedFields[key]) mergedFields[key] = new Set();
+          values.forEach((val) => mergedFields[key].add(val));
+        });
+      });
+
+      const mergedFinal = {};
+      Object.entries(mergedFields).forEach(([key, valSet]) => {
+        mergedFinal[key] = Array.from(valSet);
+      });
+
+      merged[item.id] = mergedFinal;
+    });
+
+    setConfirmedEntities(merged);
+  }, [results]);
 
   const handleFileSelect = (e) => {
     const uploadedFile = e.target.files?.[0];
@@ -196,6 +220,31 @@ export default function HomePage() {
     const data = await response.json();
     setResults(data.results);
     setHasResults(true);
+  };
+  const highlightSentences = (text, evidence) => {
+    if (!evidence) return text;
+
+    const fieldColors = {
+      Population: "bg-blue-100 text-blue-800",
+      Intervention: "bg-green-100 text-green-800",
+      Outcome: "bg-purple-100 text-purple-800",
+    };
+
+    let result = text;
+
+    Object.entries(evidence).forEach(([field, sentences]) => {
+      const colorClass = fieldColors[field] || "bg-yellow-100 text-yellow-800";
+      sentences.forEach((sentence) => {
+        const safeSentence = sentence.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+        const regex = new RegExp(`(${safeSentence})`, "g");
+        result = result.replace(
+          regex,
+          `<span class="px-1 rounded ${colorClass} font-medium">$1</span>`
+        );
+      });
+    });
+
+    return result;
   };
 
   const isReady =
@@ -470,7 +519,47 @@ export default function HomePage() {
                                       <p className="font-medium text-gray-900">
                                         Abstract:
                                       </p>
-                                      <p>{item.abstract}</p>
+
+                                      {/* LLM 切换按钮组 */}
+                                      <div className="flex flex-wrap gap-2 mb-2 mt-1">
+                                        {selectedLLMs.map((llmId) => {
+                                          const llmName =
+                                            llmOptions.find(
+                                              (llm) => llm.id === llmId
+                                            )?.name || llmId;
+                                          const isActive = llmId === activeLLM;
+
+                                          return (
+                                            <button
+                                              key={llmId}
+                                              onClick={() =>
+                                                setActiveLLM(llmId)
+                                              }
+                                              className={`px-3 py-1 rounded-md text-sm font-medium border ${
+                                                isActive
+                                                  ? "bg-blue-600 text-white border-blue-700"
+                                                  : "bg-white text-gray-800 border-gray-300 hover:bg-gray-100"
+                                              }`}
+                                            >
+                                              {llmName}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+
+                                      {/* 高亮展示 abstract */}
+                                      {activeLLM && (
+                                        <div
+                                          className="text-gray-800"
+                                          dangerouslySetInnerHTML={{
+                                            __html: highlightSentences(
+                                              item.abstract,
+                                              item.evaluations[activeLLM]
+                                                ?.evidence
+                                            ),
+                                          }}
+                                        />
+                                      )}
                                     </div>
                                     <div>
                                       <p className="font-medium text-gray-900">
@@ -512,9 +601,99 @@ export default function HomePage() {
                                               {evalData.reason ||
                                                 "No evaluation available"}
                                             </p>
+                                            {evalData.extracted && (
+                                              <div className="mt-2 text-sm text-gray-700 space-y-1">
+                                                {Object.entries(
+                                                  evalData.extracted
+                                                ).map(([key, values]) => (
+                                                  <div key={key}>
+                                                    <span className="font-medium">
+                                                      {key}:
+                                                    </span>{" "}
+                                                    {Array.isArray(values)
+                                                      ? values.join(", ")
+                                                      : values}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
                                           </div>
                                         );
                                       })}
+                                    </div>
+                                    <div className="mt-4">
+                                      <h3 className="font-semibold text-gray-900 mb-2">
+                                        Final Entities
+                                      </h3>
+                                      {Object.entries(
+                                        confirmedEntities[item.id] || {}
+                                      ).map(([field, values]) => (
+                                        <div key={field} className="mb-2">
+                                          <p className="text-sm font-medium mb-1">
+                                            {field}:
+                                          </p>
+                                          <div className="flex flex-wrap gap-2">
+                                            {values.map((val, idx) => (
+                                              <span
+                                                key={`${field}-${val}-${idx}`}
+                                                className="inline-flex items-center bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full"
+                                              >
+                                                {val}
+                                                <button
+                                                  className="ml-1 text-blue-600 hover:text-blue-900"
+                                                  onClick={() => {
+                                                    const updated = {
+                                                      ...confirmedEntities,
+                                                    };
+                                                    updated[item.id][field] =
+                                                      updated[item.id][
+                                                        field
+                                                      ].filter(
+                                                        (v) => v !== val
+                                                      );
+                                                    setConfirmedEntities(
+                                                      updated
+                                                    );
+                                                  }}
+                                                >
+                                                  ×
+                                                </button>
+                                              </span>
+                                            ))}
+                                            <input
+                                              type="text"
+                                              placeholder="+ Add"
+                                              className="border rounded px-2 py-1 text-sm"
+                                              onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                  const val =
+                                                    e.target.value.trim();
+                                                  if (!val) return;
+                                                  const updated = {
+                                                    ...confirmedEntities,
+                                                  };
+                                                  if (!updated[item.id])
+                                                    updated[item.id] = {};
+                                                  if (!updated[item.id][field])
+                                                    updated[item.id][field] =
+                                                      [];
+                                                  if (
+                                                    !updated[item.id][
+                                                      field
+                                                    ].includes(val)
+                                                  ) {
+                                                    updated[item.id][
+                                                      field
+                                                    ].push(val);
+                                                  }
+                                                  setConfirmedEntities(updated);
+                                                  e.target.value = "";
+                                                }
+                                              }}
+                                            />
+                                          </div>
+                                        </div>
+                                      ))}
                                     </div>
                                   </div>
                                 </td>
